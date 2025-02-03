@@ -31,6 +31,25 @@ services:
       - "traefik.http.routers.traefik.service=api@internal"
       - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
 
+  # 🚀 MinIO Storage
+  minio:
+    image: minio/minio
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - evolution-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.rule=Host(`${MINIO_DOMAIN}`)"
+      - "traefik.http.routers.minio.entrypoints=websecure"
+      - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
+
   # 🚀 Chatwoot API
   chatwoot:
     image: sendingtk/chatwoot:v3.12.6
@@ -39,7 +58,12 @@ services:
     depends_on:
       - postgres-chatwoot
       - redis-chatwoot
+      - minio
     env_file: .env
+    environment:
+      MINIO_ENDPOINT: http://${MINIO_DOMAIN}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
     networks:
       - evolution-network
     labels:
@@ -55,6 +79,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./evolution-api/.env
+    depends_on:
+      - rabbitmq
+      - minio
     volumes:
       - ./evolution-api/evolution_instances:/evolution/instances
     networks:
@@ -117,11 +144,22 @@ services:
     volumes:
       - redis_data:/data
 
+  # 🚀 RabbitMQ for Async Jobs
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    networks:
+      - evolution-network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
 volumes:
   traefik_letsencrypt:
   chatwoot_postgres_data:
   evolution_postgres_data:
   redis_data:
+  rabbitmq_data:
+  minio_data:
 
 networks:
   evolution-network:
