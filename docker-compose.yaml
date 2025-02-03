@@ -119,7 +119,8 @@ services:
     container_name: pgpool
     restart: unless-stopped
     depends_on:
-      - postgres-master
+      postgres-master:
+        condition: service_healthy
     environment:
       PGPOOL_BACKEND_NODES: 0:postgres-master:5432
       PGPOOL_POSTGRES_USERNAME: ${POSTGRES_USER}
@@ -153,7 +154,9 @@ services:
       CRON_SCHEDULE: '0 3 * * *' # Runs daily at 3 AM
     networks:
       - evolution-network
- redis-chatwoot:
+
+  # ✅ Fix: Correct Indentation for redis-chatwoot
+  redis-chatwoot:
     image: redis:alpine
     container_name: redis-chatwoot
     restart: always
