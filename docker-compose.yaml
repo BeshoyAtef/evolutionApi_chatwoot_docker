@@ -113,7 +113,7 @@ services:
     volumes:
       - postgres_master_data:/bitnami/postgresql
 
-  # 🚀 PostgreSQL Connection Pooler
+  # 🚀 PostgreSQL Connection Pooler (pgpool)
   pgpool:
     image: bitnami/pgpool:4
     container_name: pgpool
@@ -126,10 +126,20 @@ services:
       PGPOOL_POSTGRES_USERNAME: ${POSTGRES_USER}
       PGPOOL_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGPOOL_ENABLE_LOAD_BALANCING: yes
+
+      # ✅ FIX: Add required credentials
+      PGPOOL_ADMIN_USERNAME: pgpool_admin
+      PGPOOL_ADMIN_PASSWORD: strong_admin_password
+      PGPOOL_SR_CHECK_USER: ${POSTGRES_REPL_USER}
+      PGPOOL_SR_CHECK_PASSWORD: ${POSTGRES_REPL_PASSWORD}
+      PGPOOL_HEALTH_CHECK_USER: ${POSTGRES_USER}
+      PGPOOL_HEALTH_CHECK_PASSWORD: ${POSTGRES_PASSWORD}
+      
     ports:
       - "5432:5432"
     networks:
       - evolution-network
+
 
   # 🚀 Automated PostgreSQL Backup to MinIO
   pgbackup:
