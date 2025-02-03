@@ -114,6 +114,12 @@ services:
       - evolution-network
     volumes:
       - postgres_master_data:/bitnami/postgresql
+    healthcheck:  # ✅ ADDED HEALTHCHECK
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+      timeout: 5s
+
 
   # 🚀 PostgreSQL Connection Pooler (pgpool)
   pgpool:
@@ -122,7 +128,7 @@ services:
     restart: unless-stopped
     depends_on:
       postgres-master:
-        condition: service_healthy
+        condition: service_healthy  # ✅ ADDED THIS TO WAIT FOR HEALTHY POSTGRES-MASTER
     environment:
       PGPOOL_BACKEND_NODES: 0:postgres-master:5432
       PGPOOL_POSTGRES_USERNAME: ${POSTGRES_USER}
