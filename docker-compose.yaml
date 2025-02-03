@@ -50,20 +50,44 @@ services:
       - "traefik.http.routers.minio.entrypoints=websecure"
       - "traefik.http.routers.minio.tls.certresolver=letsencrypt"
 
+  # 🚀 RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - evolution-network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rabbitmq.rule=Host(`${RABBITMQ_DOMAIN}`)"
+      - "traefik.http.routers.rabbitmq.entrypoints=websecure"
+      - "traefik.http.routers.rabbitmq.tls.certresolver=letsencrypt"
+
   # 🚀 Chatwoot API
   chatwoot:
     image: sendingtk/chatwoot:v3.12.6
     container_name: chatwoot
     restart: unless-stopped
     depends_on:
-      - postgres-chatwoot
+      - pgpool
       - redis-chatwoot
       - minio
+      - rabbitmq
     env_file: .env
     environment:
+      DATABASE_URL: postgres://chatwoot:${POSTGRES_PASSWORD}@pgpool:5432/${POSTGRES_DB}
       MINIO_ENDPOINT: http://${MINIO_DOMAIN}
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
     networks:
       - evolution-network
     labels:
@@ -72,94 +96,69 @@ services:
       - "traefik.http.routers.chatwoot.entrypoints=websecure"
       - "traefik.http.routers.chatwoot.tls.certresolver=letsencrypt"
 
-  # 🚀 Evolution API (WhatsApp)
-  evolution:
-    image: atendai/evolution-api:v2.2.0
-    container_name: evolution-api
+  # 🚀 PostgreSQL Master
+  postgres-master:
+    image: bitnami/postgresql:15
+    container_name: postgres-master
     restart: unless-stopped
-    env_file:
-      - ./evolution-api/.env
+    environment:
+      POSTGRESQL_USERNAME: ${POSTGRES_USER}
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRESQL_DATABASE: ${POSTGRES_DB}
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: ${POSTGRES_REPL_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRES_REPL_PASSWORD}
+    networks:
+      - evolution-network
+    volumes:
+      - postgres_master_data:/bitnami/postgresql
+
+  # 🚀 PostgreSQL Connection Pooler
+  pgpool:
+    image: bitnami/pgpool:4
+    container_name: pgpool
+    restart: unless-stopped
     depends_on:
-      - rabbitmq
-      - minio
-    volumes:
-      - ./evolution-api/evolution_instances:/evolution/instances
-    networks:
-      - evolution-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.evolution.rule=Host(`${EVOLUTION_DOMAIN}`)"
-      - "traefik.http.routers.evolution.entrypoints=websecure"
-      - "traefik.http.routers.evolution.tls.certresolver=letsencrypt"
-
-  # 🚀 PostgreSQL for Chatwoot
-  postgres-chatwoot:
-    image: postgres:14
-    restart: unless-stopped
+      - postgres-master
     environment:
-      POSTGRES_DB: ${CHATWOOT_DB_NAME}
-      POSTGRES_USER: ${CHATWOOT_DB_USER}
-      POSTGRES_PASSWORD: ${CHATWOOT_DB_PASSWORD}
+      PGPOOL_BACKEND_NODES: 0:postgres-master:5432
+      PGPOOL_POSTGRES_USERNAME: ${POSTGRES_USER}
+      PGPOOL_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGPOOL_ENABLE_LOAD_BALANCING: yes
+    ports:
+      - "5432:5432"
     networks:
       - evolution-network
-    volumes:
-      - chatwoot_postgres_data:/var/lib/postgresql/data
 
-  # 🚀 PostgreSQL for Evolution API
-  postgres-evolution:
-    image: postgres:14
-    restart: unless-stopped
+  # 🚀 Automated PostgreSQL Backup to MinIO
+  pgbackup:
+    image: kartoza/pg-backup:15-3.3
+    container_name: pgbackup
+    restart: on-failure
+    depends_on:
+      - pgpool
     environment:
-      POSTGRES_DB: evolution
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: strongpassword
+      DUMPPREFIX: PG
+      POSTGRES_HOST: pgpool
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASS: ${POSTGRES_PASSWORD}
+      DBLIST: ${POSTGRES_DB}
+      STORAGE_BACKEND: S3
+      ACCESS_KEY_ID: ${BACKUP_ACCESS_KEY_ID}
+      SECRET_ACCESS_KEY: ${BACKUP_SECRET_ACCESS_KEY}
+      BUCKET: ${BACKUP_BUCKET}
+      HOST_BASE: ${BACKUP_HOST_BASE}
+      HOST_BUCKET: ${BACKUP_BUCKET}
+      SSL_SECURE: ${BACKUP_SSL_SECURE}
+      CRON_SCHEDULE: '0 3 * * *' # Runs daily at 3 AM
     networks:
       - evolution-network
-    volumes:
-      - evolution_postgres_data:/var/lib/postgresql/data
-
-  # 🚀 pgAdmin
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: chatwoot-pgadmin4
-    restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: "demo@demo.com.br"
-      PGADMIN_DEFAULT_PASSWORD: "PgAdmin2021!"
-    networks:
-      - evolution-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.pgadmin.rule=Host(`${PGADMIN_DOMAIN}`)"
-      - "traefik.http.routers.pgadmin.entrypoints=websecure"
-      - "traefik.http.routers.pgadmin.tls.certresolver=letsencrypt"
-
-  # 🚀 Redis for Chatwoot
-  redis-chatwoot:
-    image: redis:alpine
-    restart: unless-stopped
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
-    networks:
-      - evolution-network
-    volumes:
-      - redis_data:/data
-
-  # 🚀 RabbitMQ for Async Jobs
-  rabbitmq:
-    image: rabbitmq:3-management
-    restart: unless-stopped
-    networks:
-      - evolution-network
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
 
 volumes:
   traefik_letsencrypt:
-  chatwoot_postgres_data:
-  evolution_postgres_data:
-  redis_data:
-  rabbitmq_data:
+  postgres_master_data:
   minio_data:
+  rabbitmq_data:
 
 networks:
   evolution-network:
