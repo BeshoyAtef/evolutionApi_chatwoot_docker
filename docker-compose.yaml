@@ -153,6 +153,16 @@ services:
       CRON_SCHEDULE: '0 3 * * *' # Runs daily at 3 AM
     networks:
       - evolution-network
+ redis-chatwoot:
+    image: redis:alpine
+    container_name: redis-chatwoot
+    restart: always
+    command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\""]
+    env_file: .env
+    volumes:
+      - ./database/chatwoot/redis:/data
+    networks:
+      - evolution-network
 
 volumes:
   traefik_letsencrypt:
