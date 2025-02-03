@@ -95,6 +95,8 @@ services:
       - "traefik.http.routers.chatwoot.rule=Host(`${CHATWOOT_DOMAIN}`)"
       - "traefik.http.routers.chatwoot.entrypoints=websecure"
       - "traefik.http.routers.chatwoot.tls.certresolver=letsencrypt"
+      - "traefik.docker.network=evolution-network"
+
 
   # 🚀 PostgreSQL Master
   postgres-master:
